@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package>
+  <name>azure</name>
+  <version>0.0.1</version>
+  <description>
+    The azure metapackage
+  </description>
+
+  <maintainer email="meiying.qin@yale.edu">Meiying Qin</maintainer>
+  <license>Apache 2.0</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <run_depend>azure_calibration</run_depend>
+
+  <export>
+    <metapackage/>
+  </export>
+</package>
