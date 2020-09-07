@@ -150,9 +150,10 @@ private:
              << FG_YELLOW "        [4]" NO_COLOR " - increase max value for IR value range");
 
     image_transport::TransportHints hints("compressed");
+    image_transport::TransportHints hintsIR("compressedDepth");
     image_transport::TransportHints hintsDepth("compressedDepth");
     subImageColor = new image_transport::SubscriberFilter(it, topicColor, 4, hints);
-    subImageIr = new image_transport::SubscriberFilter(it, topicIr, 4, hints);
+    subImageIr = new image_transport::SubscriberFilter(it, topicIr, 4, hintsIR);
     subImageDepth = new image_transport::SubscriberFilter(it, topicDepth, 4, hintsDepth);
 
     sync = new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(ColorIrDepthSyncPolicy(10), *subImageColor, *subImageIr, *subImageDepth);
@@ -229,63 +230,65 @@ private:
     if(mode == COLOR || mode == SYNC)
     {
       readImage(imageColor, color);
+      cvtColor(color, color, cv::COLOR_BGR2GRAY);
     }
     if(mode == IR || mode == SYNC)
     {
       readImage(imageIr, ir);
       readImage(imageDepth, depth);
+      cv::normalize(depth, depth, 0, 65535, cv::NORM_MINMAX, CV_16UC1);
       cv::resize(ir, irScaled, cv::Size(), 2.0, 2.0, cv::INTER_CUBIC);
 
       convertIr(irScaled, irGrey);
     }
 
-    // if(circleBoard)
-    // {
-    //   switch(mode)
-    //   {
-    //   case COLOR:
-    //     foundColor = cv::findCirclesGrid(color, boardDims, pointsColor, circleFlags);
-    //     break;
-    //   case IR:
-    //     foundIr = cv::findCirclesGrid(irGrey, boardDims, pointsIr, circleFlags);
-    //     break;
-    //   case SYNC:
-    //     foundColor = cv::findCirclesGrid(color, boardDims, pointsColor, circleFlags);
-    //     foundIr = cv::findCirclesGrid(irGrey, boardDims, pointsIr, circleFlags);
-    //     break;
-    //   }
-    // }
-    // else
-    // {
-    //   const cv::TermCriteria termCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::COUNT, 100, DBL_EPSILON);
-    //   switch(mode)
-    //   {
-    //   case COLOR:
-    //     foundColor = cv::findChessboardCorners(color, boardDims, pointsColor, cv::CALIB_CB_FAST_CHECK);
-    //     break;
-    //   case IR:
-    //     foundIr = cv::findChessboardCorners(irGrey, boardDims, pointsIr, cv::CALIB_CB_ADAPTIVE_THRESH);
-    //     break;
-    //   case SYNC:
-    //     foundColor = cv::findChessboardCorners(color, boardDims, pointsColor, cv::CALIB_CB_FAST_CHECK);
-    //     foundIr = cv::findChessboardCorners(irGrey, boardDims, pointsIr, cv::CALIB_CB_ADAPTIVE_THRESH);
-    //     break;
-    //   }
-    //   if(foundColor)
-    //   {
-    //     cv::cornerSubPix(color, pointsColor, cv::Size(11, 11), cv::Size(-1, -1), termCriteria);
-    //   }
-    //   if(foundIr)
-    //   {
-    //     cv::cornerSubPix(irGrey, pointsIr, cv::Size(11, 11), cv::Size(-1, -1), termCriteria);
-    //   }
-    // }
+    if(circleBoard)
+    {
+      switch(mode)
+      {
+      case COLOR:
+        foundColor = cv::findCirclesGrid(color, boardDims, pointsColor, circleFlags);
+        break;
+      case IR:
+        foundIr = cv::findCirclesGrid(irGrey, boardDims, pointsIr, circleFlags);
+        break;
+      case SYNC:
+        foundColor = cv::findCirclesGrid(color, boardDims, pointsColor, circleFlags);
+        foundIr = cv::findCirclesGrid(irGrey, boardDims, pointsIr, circleFlags);
+        break;
+      }
+    }
+    else
+    {
+      const cv::TermCriteria termCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::COUNT, 100, DBL_EPSILON);
+      switch(mode)
+      {
+      case COLOR:
+        foundColor = cv::findChessboardCorners(color, boardDims, pointsColor, cv::CALIB_CB_FAST_CHECK);
+        break;
+      case IR:
+        foundIr = cv::findChessboardCorners(irGrey, boardDims, pointsIr, cv::CALIB_CB_ADAPTIVE_THRESH);
+        break;
+      case SYNC:
+        foundColor = cv::findChessboardCorners(color, boardDims, pointsColor, cv::CALIB_CB_FAST_CHECK);
+        foundIr = cv::findChessboardCorners(irGrey, boardDims, pointsIr, cv::CALIB_CB_ADAPTIVE_THRESH);
+        break;
+      }
+      if(foundColor)
+      {
+        cv::cornerSubPix(color, pointsColor, cv::Size(11, 11), cv::Size(-1, -1), termCriteria);
+      }
+      if(foundIr)
+      {
+        cv::cornerSubPix(irGrey, pointsIr, cv::Size(11, 11), cv::Size(-1, -1), termCriteria);
+      }
+    }
 
-    // if(foundIr)
-    // {
-    //   // Update min and max ir value based on checkerboard values
-    //   findMinMax(irScaled, pointsIr);
-    // }
+    if(foundIr)
+    {
+      // Update min and max ir value based on checkerboard values
+      findMinMax(irScaled, pointsIr);
+    }
 
     lock.lock();
     this->color = color;
@@ -334,9 +337,8 @@ private:
 
         if(mode == COLOR || mode == SYNC)
         {
-          colorDisp = color;
-          // cv::cvtColor(color, colorDisp, CV_GRAY2BGR);
-          // cv::drawChessboardCorners(colorDisp, boardDims, pointsColor, foundColor);
+          cv::cvtColor(color, colorDisp, CV_GRAY2BGR);
+          cv::drawChessboardCorners(colorDisp, boardDims, pointsColor, foundColor);
           //cv::resize(colorDisp, colorDisp, cv::Size(), 0.5, 0.5);
           //cv::flip(colorDisp, colorDisp, 1);
         }
@@ -975,6 +977,7 @@ public:
       }
 
       cv::remap(depth, depth, mapX, mapY, cv::INTER_NEAREST);
+
       computeROI(depth, points[i], region, roi);
 
       getPlane(i, planeNormal, planeDistance);
@@ -992,6 +995,7 @@ private:
       OUT_ERROR("number of real and computed distance samples does not match!");
       return;
     }
+
     if(imageDists.empty() || depthDists.empty())
     {
       OUT_ERROR("no distance sample data!");
@@ -1026,7 +1030,7 @@ private:
              << "     rms: " << sqavg << std::endl
              << "  median: " << diffs[diffs.size() / 2]);
 
-    storeCalibration(avg * 1000.0);
+    storeCalibration(avg * 1000);
   }
 
   void computePointDists(const cv::Mat &normal, const double distance, const cv::Mat &region, const cv::Rect &roi, std::vector<double> &depthDists, std::vector<double> &imageDists)
@@ -1116,6 +1120,7 @@ private:
     cv::Mat mask = cv::Mat::zeros(depth.rows, depth.cols, CV_8U);
 
     cv::convexHull(undist, hull);
+
     cv::fillConvexPoly(mask, hull, CV_RGB(255, 255, 255));
 
     cv::Mat tmp;
@@ -1354,6 +1359,7 @@ int main(int argc, char **argv)
     OUT_ERROR("checking ros master failed.");
     return -1;
   }
+
   if(mode == RECORD)
   {
     Recorder recorder(path, topicColor, topicIr, topicDepth, source, circleBoard, symmetric, boardDims, boardSize);
