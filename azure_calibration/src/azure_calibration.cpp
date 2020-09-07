@@ -47,6 +47,12 @@ enum Source
   SYNC
 };
 
+enum CalibrationMode
+{
+  ORIGINAL,
+  SIMPLE
+};
+
 class Recorder
 {
 private:
@@ -59,6 +65,7 @@ private:
 
   const std::string path;
   const std::string topicColor, topicIr, topicDepth;
+  const float colorDispResize, irDispResize;
   std::mutex lock;
 
   bool update;
@@ -83,9 +90,9 @@ private:
 
 public:
   Recorder(const std::string &path, const std::string &topicColor, const std::string &topicIr, const std::string &topicDepth,
-           const Source mode, const bool circleBoard, const bool symmetric, const cv::Size &boardDims, const float boardSize)
+           const Source mode, const bool circleBoard, const bool symmetric, const cv::Size &boardDims, const float boardSize, const float colorDispResize, const float irDispResize)
     : circleBoard(circleBoard), boardDims(boardDims), boardSize(boardSize), mode(mode), path(path), topicColor(topicColor), topicIr(topicIr),
-      topicDepth(topicDepth), update(false), foundColor(false), foundIr(false), frame(0), nh("~"), spinner(0), it(nh), minIr(0), maxIr(0x7FFF)
+      topicDepth(topicDepth), colorDispResize(colorDispResize), irDispResize(irDispResize), update(false), foundColor(false), foundIr(false), frame(0), nh("~"), spinner(0), it(nh), minIr(0), maxIr(0x7FFF)
   {
     if(symmetric)
     {
@@ -339,6 +346,11 @@ private:
         {
           cv::cvtColor(color, colorDisp, CV_GRAY2BGR);
           cv::drawChessboardCorners(colorDisp, boardDims, pointsColor, foundColor);
+          if(colorDispResize < 1.0) {
+            cv::resize(colorDisp, colorDisp, cv::Size(), colorDispResize, colorDispResize, CV_INTER_AREA);
+          } else if (colorDispResize > 1.0) {
+            cv::resize(colorDisp, colorDisp, cv::Size(), colorDispResize, colorDispResize, CV_INTER_LINEAR);
+          }
           //cv::resize(colorDisp, colorDisp, cv::Size(), 0.5, 0.5);
           //cv::flip(colorDisp, colorDisp, 1);
         }
@@ -346,6 +358,11 @@ private:
         {
           cv::cvtColor(irGrey, irDisp, CV_GRAY2BGR);
           cv::drawChessboardCorners(irDisp, boardDims, pointsIr, foundIr);
+          if(irDispResize < 1.0) {
+            cv::resize(irDisp, irDisp, cv::Size(), irDispResize, irDispResize, CV_INTER_AREA);
+          } else if (irDispResize > 1.0) {
+            cv::resize(irDisp, irDisp, cv::Size(), irDispResize, irDispResize, CV_INTER_LINEAR);
+          }
           //cv::resize(irDisp, irDisp, cv::Size(), 0.5, 0.5);
           //cv::flip(irDisp, irDisp, 1);
         }
@@ -1207,7 +1224,8 @@ void help(const std::string &path)
             << FG_YELLOW "    'acircle<WIDTH>*<HEIGHT>*<SIZE>' " NO_COLOR "for asymmetric circle grid" << std::endl
             << FG_YELLOW "    'chess<WIDTH>*<HEIGHT>*<SIZE>'   " NO_COLOR "for chessboard pattern" << std::endl
             << FG_GREEN "  distortion model" NO_COLOR ": " FG_YELLOW "'notrational'" NO_COLOR " for using model with 5 instead of 8 coefficients" << std::endl
-            << FG_GREEN "  output path" NO_COLOR ": " FG_YELLOW "'-path <PATH>'" NO_COLOR << std::endl;
+            << FG_GREEN "  output path" NO_COLOR ": " FG_YELLOW "'-path <PATH>'" NO_COLOR << std::endl
+            << FG_GREEN "  display" NO_COLOR ": " FG_YELLOW "'colorDispResize=<FLOAT>'" NO_COLOR " or " FG_YELLOW "'irDispResize=<FLOAT>'" NO_COLOR " to resize the displaying window of the color or ir image, respectively" << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -1229,6 +1247,8 @@ int main(int argc, char **argv)
   bool calibDepth = false;
   cv::Size boardDims = cv::Size(7, 6);
   float boardSize = 0.108;
+  float colorDispResize = 1.0;
+  float irDispResize = 1.0;
   std::string ns = AZURE_DEFAULT_NS;
   std::string path = "./";
 
@@ -1333,6 +1353,16 @@ int main(int argc, char **argv)
         return 0;
       }
     }
+    else if (arg.find("colorDispResize") == 0 && arg.find("=") != std::string::npos)
+    {
+      const size_t end = arg.size();
+      colorDispResize = atof(arg.substr(arg.find('=') + 1, end).c_str());
+    }
+    else if (arg.find("irDispResize") == 0 && arg.find("=") != std::string::npos)
+    {
+      const size_t end = arg.size();
+      irDispResize = atof(arg.substr(arg.find('=') + 1, end).c_str());
+    }
     else
     {
       ns = arg;
@@ -1343,16 +1373,18 @@ int main(int argc, char **argv)
   std::string topicIr = "/" + ns + AZURE_TOPIC_IMAGE_IR;
   std::string topicDepth = "/" + ns + AZURE_TOPIC_IMAGE_DEPTH;
   OUT_INFO("Start settings:" << std::endl
-           << "       Mode: " FG_CYAN << (mode == RECORD ? "record" : "calibrate") << NO_COLOR << std::endl
-           << "     Source: " FG_CYAN << (calibDepth ? "depth" : (source == COLOR ? "color" : (source == IR ? "ir" : "sync"))) << NO_COLOR << std::endl
-           << "      Board: " FG_CYAN << (circleBoard ? "circles" : "chess") << NO_COLOR << std::endl
-           << " Dimensions: " FG_CYAN << boardDims.width << " x " << boardDims.height << NO_COLOR << std::endl
-           << " Field size: " FG_CYAN << boardSize << NO_COLOR << std::endl
-           << "Dist. model: " FG_CYAN << (rational ? '8' : '5') << " coefficients" << NO_COLOR << std::endl
-           << "Topic color: " FG_CYAN << topicColor << NO_COLOR << std::endl
-           << "   Topic ir: " FG_CYAN << topicIr << NO_COLOR << std::endl
-           << "Topic depth: " FG_CYAN << topicDepth << NO_COLOR << std::endl
-           << "       Path: " FG_CYAN << path << NO_COLOR << std::endl);
+           << "           Mode: " FG_CYAN << (mode == RECORD ? "record" : "calibrate") << NO_COLOR << std::endl
+           << "         Source: " FG_CYAN << (calibDepth ? "depth" : (source == COLOR ? "color" : (source == IR ? "ir" : "sync"))) << NO_COLOR << std::endl
+           << "          Board: " FG_CYAN << (circleBoard ? "circles" : "chess") << NO_COLOR << std::endl
+           << "     Dimensions: " FG_CYAN << boardDims.width << " x " << boardDims.height << NO_COLOR << std::endl
+           << "     Field size: " FG_CYAN << boardSize << NO_COLOR << std::endl
+           << "    Dist. model: " FG_CYAN << (rational ? '8' : '5') << " coefficients" << NO_COLOR << std::endl
+           << "    Topic color: " FG_CYAN << topicColor << NO_COLOR << std::endl
+           << "       Topic ir: " FG_CYAN << topicIr << NO_COLOR << std::endl
+           << "    Topic depth: " FG_CYAN << topicDepth << NO_COLOR << std::endl
+           << "           Path: " FG_CYAN << path << NO_COLOR << std::endl
+           << "colorDispResize: " FG_CYAN << colorDispResize << NO_COLOR << std::endl
+           << "   irDispResize: " FG_CYAN << irDispResize << NO_COLOR << std::endl);
 
   if(!ros::master::check())
   {
@@ -1362,7 +1394,7 @@ int main(int argc, char **argv)
 
   if(mode == RECORD)
   {
-    Recorder recorder(path, topicColor, topicIr, topicDepth, source, circleBoard, symmetric, boardDims, boardSize);
+    Recorder recorder(path, topicColor, topicIr, topicDepth, source, circleBoard, symmetric, boardDims, boardSize, colorDispResize, irDispResize);
 
     OUT_INFO("starting recorder...");
     recorder.run();
