@@ -529,7 +529,7 @@ public:
   {
   }
 
-  bool restore()
+  bool restore(CalibrationMode calibMode=ORIGINAL)
   {
     std::vector<std::string> filesSync;
     std::vector<std::string> filesColor;
@@ -555,7 +555,15 @@ public:
       }
 
       posSync = filename.rfind(CALIB_SYNC);
-      posColor = filename.rfind(CALIB_FILE_COLOR);
+      if(calibMode == ORIGINAL)
+      {
+        posColor = filename.rfind(CALIB_FILE_COLOR);
+      } else {
+        std::string template_name = "";
+        template_name += CALIB_SYNC;
+        template_name += CALIB_FILE_COLOR;
+        posColor = filename.rfind(template_name);
+      }
 
       if(posSync != std::string::npos)
       {
@@ -575,8 +583,17 @@ public:
         filesColor.push_back(frameName);
         continue;
       }
+ 
+      if(calibMode == ORIGINAL)
+      {
+        posIr = filename.rfind(CALIB_FILE_IR_GREY);
+      } else {
+        std::string template_name = "";
+        template_name += CALIB_SYNC;
+        template_name += CALIB_FILE_IR_GREY;
+        posIr = filename.rfind(template_name);
+      }
 
-      posIr = filename.rfind(CALIB_FILE_IR_GREY);
       if(posIr != std::string::npos)
       {
         std::string frameName = filename.substr(0, posIr);
@@ -591,6 +608,8 @@ public:
     std::sort(filesSync.begin(), filesSync.end());
 
     bool ret = true;
+    std::string template_color_point_file = "";
+    std::string template_ir_point_file = "";
     switch(mode)
     {
     case COLOR:
@@ -601,7 +620,13 @@ public:
       }
       pointsColor.resize(filesColor.size());
       pointsBoard.resize(filesColor.size(), board);
-      ret = ret && readFiles(filesColor, CALIB_POINTS_COLOR, pointsColor);
+      if(calibMode == ORIGINAL) {
+        template_color_point_file += CALIB_POINTS_COLOR;
+      } else {
+        template_color_point_file += CALIB_SYNC;
+        template_color_point_file += CALIB_POINTS_COLOR;
+      }
+      ret = ret && readFiles(filesColor, template_color_point_file, pointsColor);
       break;
     case IR:
       if(filesIr.empty())
@@ -611,7 +636,13 @@ public:
       }
       pointsIr.resize(filesIr.size());
       pointsBoard.resize(filesIr.size(), board);
-      ret = ret && readFiles(filesIr, CALIB_POINTS_IR, pointsIr);
+      if(calibMode == ORIGINAL) {
+        template_ir_point_file += CALIB_POINTS_IR;
+      } else {
+        template_ir_point_file += CALIB_SYNC;
+        template_ir_point_file += CALIB_POINTS_IR;
+      }
+      ret = ret && readFiles(filesIr, template_ir_point_file, pointsIr);
       break;
     case SYNC:
       if(filesColor.empty() || filesIr.empty())
@@ -894,7 +925,7 @@ public:
   {
   }
 
-  bool restore()
+  bool restore(CalibrationMode calibMode=ORIGINAL)
   {
     std::vector<std::string> files;
 
@@ -923,7 +954,15 @@ public:
         continue;
       }*/
 
-      pos = filename.rfind(CALIB_FILE_IR_GREY);
+      if(calibMode == ORIGINAL)
+      {
+        pos = filename.rfind(CALIB_FILE_IR_GREY);
+      } else {
+        std::string template_name = "";
+        template_name += CALIB_SYNC;
+        template_name += CALIB_FILE_IR_GREY;
+        pos = filename.rfind(template_name);
+      }
       if(pos != std::string::npos)
       {
         std::string frameName = filename.substr(0, pos);
@@ -941,7 +980,7 @@ public:
       return false;
     }
 
-    bool ret = readFiles(files);
+    bool ret = readFiles(files, calibMode);
     ret = ret && loadCalibration();
 
     if(ret)
@@ -1145,16 +1184,28 @@ private:
     tmp(roi).copyTo(region);
   }
 
-  bool readFiles(const std::vector<std::string> &files)
+  bool readFiles(const std::vector<std::string> &files, CalibrationMode calibMode)
   {
     points.resize(files.size());
     images.resize(files.size());
     bool ret = true;
+    std::string template_ir_point_file = "";
+    std::string template_depth_file = "";
+
+    if(calibMode == ORIGINAL) {
+      template_ir_point_file += CALIB_POINTS_IR;
+      template_depth_file += CALIB_FILE_DEPTH;
+    } else {
+      template_ir_point_file += CALIB_SYNC;
+      template_ir_point_file += CALIB_POINTS_IR;
+      template_depth_file += CALIB_SYNC;
+      template_depth_file += CALIB_FILE_DEPTH;
+    }
 
     #pragma omp parallel for
     for(size_t i = 0; i < files.size(); ++i)
     {
-      std::string pointsname = path + files[i] + CALIB_POINTS_IR;
+      std::string pointsname = path + files[i] + template_ir_point_file;
 
       #pragma omp critical
       OUT_INFO("restoring file: " << files[i]);
@@ -1172,7 +1223,7 @@ private:
       {
         file["points"] >> points[i];
         file.release();
-        images[i] = path + files[i] + CALIB_FILE_DEPTH;
+        images[i] = path + files[i] + template_depth_file;
       }
     }
     return ret;
@@ -1225,7 +1276,8 @@ void help(const std::string &path)
             << FG_YELLOW "    'chess<WIDTH>*<HEIGHT>*<SIZE>'   " NO_COLOR "for chessboard pattern" << std::endl
             << FG_GREEN "  distortion model" NO_COLOR ": " FG_YELLOW "'notrational'" NO_COLOR " for using model with 5 instead of 8 coefficients" << std::endl
             << FG_GREEN "  output path" NO_COLOR ": " FG_YELLOW "'-path <PATH>'" NO_COLOR << std::endl
-            << FG_GREEN "  display" NO_COLOR ": " FG_YELLOW "'colorDispResize=<FLOAT>'" NO_COLOR " or " FG_YELLOW "'irDispResize=<FLOAT>'" NO_COLOR " to resize the displaying window of the color or ir image, respectively" << std::endl;
+            << FG_GREEN "  display" NO_COLOR ": " FG_YELLOW "'colorDispResize=<FLOAT>'" NO_COLOR " or " FG_YELLOW "'irDispResize=<FLOAT>'" NO_COLOR " to resize the displaying window of the color or ir image, respectively" << std::endl
+            << FG_GREEN "  calibration mode" NO_COLOR ": " FG_YELLOW "'simple'" NO_COLOR " to use the simple mode. The default is the original mode." << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -1241,6 +1293,7 @@ int main(int argc, char **argv)
 
   Mode mode = RECORD;
   Source source = SYNC;
+  CalibrationMode calibrationMode = ORIGINAL;
   bool circleBoard = false;
   bool symmetric = true;
   bool rational = true;
@@ -1276,6 +1329,10 @@ int main(int argc, char **argv)
     else if(arg == "calibrate")
     {
       mode = CALIBRATE;
+    }
+    else if(arg == "simple")
+    {
+      calibrationMode = SIMPLE;
     }
     else if(arg == "color")
     {
@@ -1384,7 +1441,8 @@ int main(int argc, char **argv)
            << "    Topic depth: " FG_CYAN << topicDepth << NO_COLOR << std::endl
            << "           Path: " FG_CYAN << path << NO_COLOR << std::endl
            << "colorDispResize: " FG_CYAN << colorDispResize << NO_COLOR << std::endl
-           << "   irDispResize: " FG_CYAN << irDispResize << NO_COLOR << std::endl);
+           << "   irDispResize: " FG_CYAN << irDispResize << NO_COLOR << std::endl
+           << "calibrationMode: " FG_CYAN << (calibrationMode == ORIGINAL ? "original" : "simple") << NO_COLOR << std::endl);
 
   if(!ros::master::check())
   {
@@ -1400,6 +1458,36 @@ int main(int argc, char **argv)
     recorder.run();
 
     OUT_INFO("stopped recording...");
+  }
+    else if (calibrationMode == SIMPLE)
+  {
+    CameraCalibration colorCalib(path, COLOR, circleBoard, symmetric, boardDims, boardSize, rational);
+    OUT_INFO("restoring color files...");
+    colorCalib.restore(calibrationMode);
+    OUT_INFO("starting color calibration...");
+    colorCalib.calibrate();
+    std::cout << "------------------------------------------------------" << std::endl;
+
+    CameraCalibration irCalib(path, IR, circleBoard, symmetric, boardDims, boardSize, rational);
+    OUT_INFO("restoring ir files...");
+    irCalib.restore(calibrationMode);
+    OUT_INFO("starting color calibration...");
+    irCalib.calibrate();
+    std::cout << "------------------------------------------------------" << std::endl;
+
+    CameraCalibration syncCalib(path, SYNC, circleBoard, symmetric, boardDims, boardSize, rational);
+    OUT_INFO("restoring image and ir files...");
+    syncCalib.restore();
+    OUT_INFO("starting sync calibration...");
+    syncCalib.calibrate();
+    std::cout << "------------------------------------------------------" << std::endl;
+
+    DepthCalibration depthCalib(path, symmetric, boardDims, boardSize);
+    OUT_INFO("restoring depth files...");
+    depthCalib.restore(calibrationMode);
+    OUT_INFO("starting depth calibration...");
+    depthCalib.calibrate();
+    std::cout << "------------------------------------------------------" << std::endl;
   }
   else if(calibDepth)
   {
