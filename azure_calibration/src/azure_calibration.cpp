@@ -92,7 +92,7 @@ public:
   Recorder(const std::string &path, const std::string &topicColor, const std::string &topicIr, const std::string &topicDepth,
            const Source mode, const bool circleBoard, const bool symmetric, const cv::Size &boardDims, const float boardSize, const float colorDispResize, const float irDispResize)
     : circleBoard(circleBoard), boardDims(boardDims), boardSize(boardSize), mode(mode), path(path), topicColor(topicColor), topicIr(topicIr),
-      topicDepth(topicDepth), colorDispResize(colorDispResize), irDispResize(irDispResize), update(false), foundColor(false), foundIr(false), frame(0), nh("~"), spinner(0), it(nh), minIr(0), maxIr(0x7FFF)
+      topicDepth(topicDepth), colorDispResize(colorDispResize), irDispResize(irDispResize), update(false), foundColor(false), foundIr(false), frame(180), nh("~"), spinner(0), it(nh), minIr(0), maxIr(0x7FFF)
   {
     if(symmetric)
     {
@@ -129,6 +129,8 @@ public:
     }
 
     clahe = cv::createCLAHE(1.5, cv::Size(32, 32));
+
+    startRecord();
   }
   ~Recorder()
   {
@@ -136,9 +138,7 @@ public:
 
   void run()
   {
-    startRecord();
-
-    display();
+    ros::spin();
 
     stopRecord();
   }
@@ -163,15 +163,14 @@ private:
     subImageIr = new image_transport::SubscriberFilter(it, topicIr, 4, hintsIR);
     subImageDepth = new image_transport::SubscriberFilter(it, topicDepth, 4, hintsDepth);
 
-    sync = new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(ColorIrDepthSyncPolicy(10), *subImageColor, *subImageIr, *subImageDepth);
+    sync = new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(ColorIrDepthSyncPolicy(2), *subImageColor, *subImageIr, *subImageDepth);
     sync->registerCallback(boost::bind(&Recorder::callback, this, _1, _2, _3));
-
-    spinner.start();
   }
 
   void stopRecord()
   {
-    spinner.stop();
+    cv::destroyAllWindows();
+    cv::waitKey(100);
 
     delete sync;
     delete subImageColor;
@@ -229,6 +228,18 @@ private:
 
   void callback(const sensor_msgs::Image::ConstPtr imageColor, const sensor_msgs::Image::ConstPtr imageIr, const sensor_msgs::Image::ConstPtr imageDepth)
   {
+    if(!ros::ok()) {
+      cv::destroyAllWindows();
+      cv::waitKey(100);
+
+      delete sync;
+      delete subImageColor;
+      delete subImageIr;
+      delete subImageDepth;
+      return;
+    }
+
+    lock.lock();
     std::vector<cv::Point2f> pointsColor, pointsIr;
     cv::Mat color, ir, irGrey, irScaled, depth;
     bool foundColor = false;
@@ -297,7 +308,6 @@ private:
       findMinMax(irScaled, pointsIr);
     }
 
-    lock.lock();
     this->color = color;
     this->ir = ir;
     this->irGrey = irGrey;
@@ -307,69 +317,34 @@ private:
     this->pointsColor = pointsColor;
     this->pointsIr = pointsIr;
     update = true;
-    lock.unlock();
-  }
 
-  void display()
-  {
-    std::vector<cv::Point2f> pointsColor, pointsIr;
-    cv::Mat color, ir, irGrey, depth;
     cv::Mat colorDisp, irDisp;
-    bool foundColor = false;
-    bool foundIr = false;
     bool save = false;
     bool running = true;
 
-    std::chrono::milliseconds duration(1);
-    while(!update && ros::ok())
+    if(mode == COLOR || mode == SYNC)
     {
-      std::this_thread::sleep_for(duration);
+      cv::cvtColor(color, colorDisp, CV_GRAY2BGR);
+      cv::drawChessboardCorners(colorDisp, boardDims, pointsColor, foundColor);
+      if(colorDispResize < 1.0) {
+        cv::resize(colorDisp, colorDisp, cv::Size(), colorDispResize, colorDispResize, CV_INTER_AREA);
+      } else if (colorDispResize > 1.0) {
+        cv::resize(colorDisp, colorDisp, cv::Size(), colorDispResize, colorDispResize, CV_INTER_LINEAR);
+      }
+    }
+    if(mode == IR || mode == SYNC)
+    {
+      cv::cvtColor(irGrey, irDisp, CV_GRAY2BGR);
+      cv::drawChessboardCorners(irDisp, boardDims, pointsIr, foundIr);
+      if(irDispResize < 1.0) {
+        cv::resize(irDisp, irDisp, cv::Size(), irDispResize, irDispResize, CV_INTER_AREA);
+      } else if (irDispResize > 1.0) {
+        cv::resize(irDisp, irDisp, cv::Size(), irDispResize, irDispResize, CV_INTER_LINEAR);
+      }
     }
 
-    for(; ros::ok() && running;)
+    switch(mode)
     {
-      if(update)
-      {
-        lock.lock();
-        color = this->color;
-        ir = this->ir;
-        irGrey = this->irGrey;
-        depth = this->depth;
-        foundColor = this->foundColor;
-        foundIr = this->foundIr;
-        pointsColor = this->pointsColor;
-        pointsIr = this->pointsIr;
-        update = false;
-        lock.unlock();
-
-        if(mode == COLOR || mode == SYNC)
-        {
-          cv::cvtColor(color, colorDisp, CV_GRAY2BGR);
-          cv::drawChessboardCorners(colorDisp, boardDims, pointsColor, foundColor);
-          if(colorDispResize < 1.0) {
-            cv::resize(colorDisp, colorDisp, cv::Size(), colorDispResize, colorDispResize, CV_INTER_AREA);
-          } else if (colorDispResize > 1.0) {
-            cv::resize(colorDisp, colorDisp, cv::Size(), colorDispResize, colorDispResize, CV_INTER_LINEAR);
-          }
-          //cv::resize(colorDisp, colorDisp, cv::Size(), 0.5, 0.5);
-          //cv::flip(colorDisp, colorDisp, 1);
-        }
-        if(mode == IR || mode == SYNC)
-        {
-          cv::cvtColor(irGrey, irDisp, CV_GRAY2BGR);
-          cv::drawChessboardCorners(irDisp, boardDims, pointsIr, foundIr);
-          if(irDispResize < 1.0) {
-            cv::resize(irDisp, irDisp, cv::Size(), irDispResize, irDispResize, CV_INTER_AREA);
-          } else if (irDispResize > 1.0) {
-            cv::resize(irDisp, irDisp, cv::Size(), irDispResize, irDispResize, CV_INTER_LINEAR);
-          }
-          //cv::resize(irDisp, irDisp, cv::Size(), 0.5, 0.5);
-          //cv::flip(irDisp, irDisp, 1);
-        }
-      }
-
-      switch(mode)
-      {
       case COLOR:
         cv::imshow("color", colorDisp);
         break;
@@ -380,11 +355,11 @@ private:
         cv::imshow("color", colorDisp);
         cv::imshow("ir", irDisp);
         break;
-      }
+    }
 
-      int key = cv::waitKey(10);
-      switch(key & 0xFF)
-      {
+    int key = cv::waitKey(10);
+    switch(key & 0xFF)
+    {
       case ' ':
       case 's':
         save = true;
@@ -392,6 +367,7 @@ private:
       case 27:
       case 'q':
         running = false;
+        ros::shutdown();
         break;
       case '1':
         minIr = std::max(0, minIr - 100);
@@ -413,16 +389,15 @@ private:
         maxIr = std::min(0x7FFF, maxIr + 100);
         minIr = std::min(maxIr - 1, minIr + 100);
         break;
-      }
-
-      if(save && ((mode == COLOR && foundColor) || (mode == IR && foundIr) || (mode == SYNC && foundColor && foundIr)))
-      {
-        store(color, ir, irGrey, depth, pointsColor, pointsIr);
-        save = false;
-      }
     }
-    cv::destroyAllWindows();
-    cv::waitKey(100);
+
+    if(save && ((mode == COLOR && foundColor) || (mode == IR && foundIr) || (mode == SYNC && foundColor && foundIr)))
+    {
+      store(color, ir, irGrey, depth, pointsColor, pointsIr);
+      save = false;
+    }
+
+    lock.unlock();
   }
 
   void readImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image) const
