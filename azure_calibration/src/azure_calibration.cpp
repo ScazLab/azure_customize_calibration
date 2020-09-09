@@ -92,7 +92,7 @@ public:
   Recorder(const std::string &path, const std::string &topicColor, const std::string &topicIr, const std::string &topicDepth,
            const Source mode, const bool circleBoard, const bool symmetric, const cv::Size &boardDims, const float boardSize, const float colorDispResize, const float irDispResize)
     : circleBoard(circleBoard), boardDims(boardDims), boardSize(boardSize), mode(mode), path(path), topicColor(topicColor), topicIr(topicIr),
-      topicDepth(topicDepth), colorDispResize(colorDispResize), irDispResize(irDispResize), update(false), foundColor(false), foundIr(false), frame(180), nh("~"), spinner(0), it(nh), minIr(0), maxIr(0x7FFF)
+      topicDepth(topicDepth), colorDispResize(colorDispResize), irDispResize(irDispResize), update(false), foundColor(false), foundIr(false), frame(0), nh("~"), spinner(0), it(nh), minIr(0), maxIr(0x7FFF)
   {
     if(symmetric)
     {
@@ -163,7 +163,7 @@ private:
     subImageIr = new image_transport::SubscriberFilter(it, topicIr, 4, hintsIR);
     subImageDepth = new image_transport::SubscriberFilter(it, topicDepth, 4, hintsDepth);
 
-    sync = new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(ColorIrDepthSyncPolicy(2), *subImageColor, *subImageIr, *subImageDepth);
+    sync = new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(ColorIrDepthSyncPolicy(10), *subImageColor, *subImageIr, *subImageDepth);
     sync->registerCallback(boost::bind(&Recorder::callback, this, _1, _2, _3));
   }
 
@@ -240,6 +240,7 @@ private:
     }
 
     lock.lock();
+    // auto start = std::chrono::high_resolution_clock::now();
     std::vector<cv::Point2f> pointsColor, pointsIr;
     cv::Mat color, ir, irGrey, irScaled, depth;
     bool foundColor = false;
@@ -397,6 +398,9 @@ private:
       save = false;
     }
 
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    // OUT_INFO("execution time: " << milliseconds.count() << std::endl);
     lock.unlock();
   }
 
@@ -412,7 +416,6 @@ private:
     std::ostringstream oss;
     oss << std::setfill('0') << std::setw(4) << frame++;
     const std::string frameNumber(oss.str());
-    OUT_INFO("storing frame: " << frameNumber);
     std::string base = path + frameNumber;
 
     for(size_t i = 0; i < pointsIr.size(); ++i)
@@ -443,6 +446,8 @@ private:
       cv::FileStorage file(base + CALIB_POINTS_IR, cv::FileStorage::WRITE);
       file << "points" << pointsIr;
     }
+
+    OUT_INFO("stored frame: " << frameNumber);
   }
 };
 
