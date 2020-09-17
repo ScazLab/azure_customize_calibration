@@ -1,0 +1,7 @@
+<launch>
+
+    <include file="$(find meiying_crow_tool)/config/config.xml" />
+
+    <node pkg="azure_calibration" name="calibrate" type="calibrate_with_kuka.py" output="screen" />
+
+</launch>

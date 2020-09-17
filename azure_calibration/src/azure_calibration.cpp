@@ -1257,7 +1257,8 @@ void help(const std::string &path)
             << FG_GREEN "  distortion model" NO_COLOR ": " FG_YELLOW "'notrational'" NO_COLOR " for using model with 5 instead of 8 coefficients" << std::endl
             << FG_GREEN "  output path" NO_COLOR ": " FG_YELLOW "'-path <PATH>'" NO_COLOR << std::endl
             << FG_GREEN "  display" NO_COLOR ": " FG_YELLOW "'colorDispResize=<FLOAT>'" NO_COLOR " or " FG_YELLOW "'irDispResize=<FLOAT>'" NO_COLOR " to resize the displaying window of the color or ir image, respectively" << std::endl
-            << FG_GREEN "  calibration mode" NO_COLOR ": " FG_YELLOW "'simple'" NO_COLOR " to use the simple mode. The default is the original mode." << std::endl;
+            << FG_GREEN "  calibration mode" NO_COLOR ": " FG_YELLOW "'simple'" NO_COLOR " to use the simple mode. The default is the original mode." << std::endl
+            << FG_GREEN "  notrotational" NO_COLOR ": to use the plumb_bob method (with 5 distortion coefficients. Otherwise, use rational_polynomia with 8 distortion coefficients)." << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -1330,7 +1331,7 @@ int main(int argc, char **argv)
     {
       calibDepth = true;
     }
-    else if(arg == "notrational")
+    else if(arg == "notrotational")
     {
       rational = false;
     }
